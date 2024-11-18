@@ -27,6 +27,7 @@ player_side = 'white'  # Set to 'white' or 'black'
 # Game state variables
 selection_mode = 'select_piece'  # Modes: 'select_piece', 'select_move', 'error'
 selected_piece = None  # Tuple (row, col) of selected piece
+last_move = ""  # Variable to keep track of the last move
 
 def initialize_colors():
     curses.start_color()
@@ -149,19 +150,19 @@ def move_piece(from_pos, to_pos, stdscr):
     print_move_to_console(stdscr, move_notation)
 
 def flash_error(stdscr, row, col):
-    global selection_mode
+    global selection_mode, last_move
     selection_mode = 'error'
 
     # Display the yellow error blink for a short duration
     for _ in range(3):  # Loop for a short duration to create the blink effect
-        display_board(stdscr, row, col)
+        update_board(stdscr, row, col, last_move)
         stdscr.refresh()
         curses.napms(100)  # Pause for 100 milliseconds
 
     # Reset to the previous mode
     selection_mode = 'select_piece' if selected_piece is None else 'select_move'
 
-def display_board(stdscr, sel_row, sel_col):
+def update_board(stdscr, sel_row, sel_col, last_move):
     stdscr.clear()
 
     # Top border with width 26
@@ -210,8 +211,48 @@ def display_board(stdscr, sel_row, sel_col):
     for x in range(26):
         stdscr.addstr(len(board) + 1, x, "▄", curses.color_pair(3))
 
+    # Print the last move below the board
+    stdscr.addstr(len(board) + 3, 0, f"Last move: {last_move}                    ")  # Display the move text
+
     stdscr.refresh()
-    
+
+def handle_movement_keys(key, row, col):
+    if key == curses.KEY_UP:
+        row = (row - 1) % 8
+    elif key == curses.KEY_DOWN:
+        row = (row + 1) % 8
+    elif key == curses.KEY_LEFT:
+        col = (col - 1) % 8
+    elif key == curses.KEY_RIGHT:
+        col = (col + 1) % 8
+    return row, col
+
+def handle_enter_key(stdscr, row, col, last_move):
+    global selection_mode, selected_piece
+    piece = board[row][col]
+    if selection_mode == 'select_piece':
+        if (player_side == 'white' and piece.isupper()) or (player_side == 'black' and piece.islower()):
+            selection_mode = 'select_move'
+            selected_piece = (row, col)
+        else:
+            flash_error(stdscr, row, col)
+    elif selection_mode == 'select_move':
+        if is_legal_move(selected_piece, (row, col)):
+            move_notation = generate_move_notation(board[selected_piece[0]][selected_piece[1]], selected_piece, (row, col))
+            last_move = move_notation  # Update the last move
+            move_piece(selected_piece, (row, col), stdscr)  # Make the move
+            selection_mode = 'select_piece'
+            selected_piece = None
+        else:
+            flash_error(stdscr, row, col)
+    return last_move
+
+def handle_escape_key(selection_mode, selected_piece):
+    if selection_mode == 'select_move':
+        selection_mode = 'select_piece'
+        selected_piece = None
+    return selection_mode, selected_piece
+
 # Updated board rendering with three-character-wide tiles
 def main(stdscr):
     initialize_colors()
@@ -219,50 +260,23 @@ def main(stdscr):
     stdscr.nodelay(1)    # Non-blocking input
     stdscr.timeout(100)  # Refresh rate for blinking effect
 
-    global selection_mode, selected_piece
+    global selection_mode, selected_piece, last_move
     row, col = 0, 0  # Initial selection position
-    last_move = ""  # Variable to keep track of the last move
 
     while True:
-        display_board(stdscr, row, col)  # Draw the board
-
-        # Print the last move below the board
-        stdscr.addstr(len(board) + 3, 0, f"Last move: {last_move}")  # Display the move text
-        stdscr.refresh()
+        update_board(stdscr, row, col, last_move)  # Draw the board and last move
 
         key = stdscr.getch()
 
         # Handle key inputs for selection and movement
-        if key == curses.KEY_UP:
-            row = (row - 1) % 8
-        elif key == curses.KEY_DOWN:
-            row = (row + 1) % 8
-        elif key == curses.KEY_LEFT:
-            col = (col - 1) % 8
-        elif key == curses.KEY_RIGHT:
-            col = (col + 1) % 8
-        elif key == ord('\n') or key == curses.KEY_ENTER:
-            if selection_mode == 'select_piece':
-                # Logic to select a piece
-                piece = board[row][col]
-                if (player_side == 'white' and piece.isupper()) or (player_side == 'black' and piece.islower()):
-                    selection_mode = 'select_move'
-                    selected_piece = (row, col)
-                else:
-                    flash_error(stdscr, row, col)  # Invalid selection
-            elif selection_mode == 'select_move':
-                if is_legal_move(selected_piece, (row, col)):
-                    move_notation = generate_move_notation(board[selected_piece[0]][selected_piece[1]], selected_piece, (row, col))
-                    last_move = move_notation  # Update the last move
-                    move_piece(selected_piece, (row, col), stdscr)  # Make the move
-                    selection_mode = 'select_piece'
-                    selected_piece = None
-                else:
-                    flash_error(stdscr, row, col)  # Invalid move
+        if key in [curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT]:
+            row, col = handle_movement_keys(key, row, col)
+        elif key in [ord('\n'), curses.KEY_ENTER]:
+            last_move = handle_enter_key(stdscr, row, col, last_move)
         elif key == 27:  # Escape key
-            if selection_mode == 'select_move':
-                selection_mode = 'select_piece'
-                selected_piece = None
+            selection_mode, selected_piece = handle_escape_key(selection_mode, selected_piece)
+        elif key == ord('q'):
+            break
 
 def generate_move_notation(piece, from_pos, to_pos):
     from_row, from_col = from_pos
