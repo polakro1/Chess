@@ -1,5 +1,6 @@
 import curses
 import time
+import socket
 
 #added generate chess notation function
 
@@ -227,7 +228,7 @@ def handle_movement_keys(key, row, col):
         col = (col + 1) % 8
     return row, col
 
-def handle_enter_key(stdscr, row, col, last_move):
+def handle_enter_key(stdscr, row, col):
     global selection_mode, selected_piece
     piece = board[row][col]
     if selection_mode == 'select_piece':
@@ -239,13 +240,40 @@ def handle_enter_key(stdscr, row, col, last_move):
     elif selection_mode == 'select_move':
         if is_legal_move(selected_piece, (row, col)):
             move_notation = generate_move_notation(board[selected_piece[0]][selected_piece[1]], selected_piece, (row, col))
-            last_move = move_notation  # Update the last move
-            move_piece(selected_piece, (row, col), stdscr)  # Make the move
+            move_piece(selected_piece, (row, col), stdscr)
             selection_mode = 'select_piece'
             selected_piece = None
+            return move_notation  # Return the move notation
         else:
             flash_error(stdscr, row, col)
-    return last_move
+    return None
+
+def handle_surrender(stdscr, conn):
+    # Ask for confirmation to surrender
+    confirmation = prompt_user(stdscr, "Are you sure you want to surrender? (y/n): ")
+    if confirmation.lower() != 'y':
+        return  # Cancel surrender
+
+    # Ask if the user changed their mind
+    changed_mind = prompt_user(stdscr, "Did you change your mind? (y/n): ")
+    if changed_mind.lower() == 'y':
+        return  # Cancel surrender
+
+    # Proceed to surrender
+    # Send the surrender message to the opponent
+    conn.sendall('surrender'.encode('utf-8'))
+    
+    # Update the board to show surrender
+    global last_move
+    last_move = "You surrendered."
+    update_board(stdscr, -1, -1, last_move)  # -1, -1 to indicate no selection
+    
+    # Inform the player and exit
+    stdscr.addstr(len(board) + 5, 0, "You have surrendered. Game over.", curses.color_pair(6))
+    stdscr.refresh()
+    time.sleep(2)
+    conn.close()
+    exit()
 
 def handle_escape_key(selection_mode, selected_piece):
     if selection_mode == 'select_move':
@@ -253,8 +281,31 @@ def handle_escape_key(selection_mode, selected_piece):
         selected_piece = None
     return selection_mode, selected_piece
 
+def setup_network():
+    mode = input("Enter 'server' to host or 'client' to connect: ").strip().lower()
+    port_server = 5050
+    buffer_size = 1024
+
+    if mode == 'server':
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind(("", port_server))
+        server_socket.listen(1)
+        print(f"Server listening on port {port_server}...")
+        conn, addr = server_socket.accept()
+        print(f"Connected by {addr}")
+        player_side = 'white'  # Server plays white
+    elif mode == 'client':
+        conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.connect(("localhost", port_server))
+        player_side = 'black'  # Client plays black
+    else:
+        print("Invalid mode.")
+        exit()
+    return conn, player_side
+
 # Updated board rendering with three-character-wide tiles
-def main(stdscr):
+def main(stdscr, conn, player_side):
     initialize_colors()
     curses.curs_set(0)   # Hide the cursor
     stdscr.nodelay(1)    # Non-blocking input
@@ -262,21 +313,65 @@ def main(stdscr):
 
     global selection_mode, selected_piece, last_move
     row, col = 0, 0  # Initial selection position
+    turn = 'white'  # White starts first
 
     while True:
-        update_board(stdscr, row, col, last_move)  # Draw the board and last move
+        update_board(stdscr, row, col, last_move)  # Always update the board
 
+        # Handle key inputs for surrender regardless of turn
         key = stdscr.getch()
+        if key != -1:
+            if key == ord('s'):
+                handle_surrender(stdscr, conn)
+            elif key in [curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT]:
+                if turn == player_side:
+                    row, col = handle_movement_keys(key, row, col)
+            elif key in [ord('\n'), curses.KEY_ENTER]:
+                if turn == player_side:
+                    move_notation = handle_enter_key(stdscr, row, col)
+                    if move_notation:
+                        update_board(stdscr, row, col, move_notation)  # Show the move on the board
+                        conn.sendall(move_notation.encode('utf-8'))
+                        last_move = move_notation
+                        turn = 'black' if player_side == 'white' else 'white'  # Switch turn
+            elif key == 27:  # Escape key
+                selection_mode, selected_piece = handle_escape_key(selection_mode, selected_piece)
+            elif key == ord('q'):
+                conn.close()
+                break
 
-        # Handle key inputs for selection and movement
-        if key in [curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT]:
-            row, col = handle_movement_keys(key, row, col)
-        elif key in [ord('\n'), curses.KEY_ENTER]:
-            last_move = handle_enter_key(stdscr, row, col, last_move)
-        elif key == 27:  # Escape key
-            selection_mode, selected_piece = handle_escape_key(selection_mode, selected_piece)
-        elif key == ord('q'):
-            break
+        if turn != player_side:
+            # Wait for opponent's move
+            try:
+                move_data = conn.recv(1024).decode('utf-8')
+                if not move_data:
+                    print("Connection closed.")
+                    conn.close()
+                    break
+                if move_data == 'surrender':
+                    last_move = "Opponent has surrendered. You win!"
+                    update_board(stdscr, -1, -1, last_move)
+                    stdscr.addstr(len(board) + 5, 0, "Opponent has surrendered. You win!", curses.color_pair(5))
+                    stdscr.refresh()
+                    time.sleep(2)
+                    conn.close()
+                    break
+                from_pos, to_pos = parse_move_data(move_data)
+                move_piece(from_pos, to_pos, stdscr)
+                last_move = move_data
+                turn = player_side  # Your turn now
+            except socket.error:
+                pass  # Handle socket errors if necessary
+        else:
+            pass  # Your turn; already handled key inputs above
+
+def parse_move_data(move_data):
+    col_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+    from_col = col_map[move_data[0]]
+    from_row = 8 - int(move_data[1])
+    to_col = col_map[move_data[-2]]
+    to_row = 8 - int(move_data[-1])
+    return (from_row, from_col), (to_row, to_col)
 
 def generate_move_notation(piece, from_pos, to_pos):
     from_row, from_col = from_pos
@@ -287,18 +382,23 @@ def generate_move_notation(piece, from_pos, to_pos):
     from_square = f"{col_map[from_col]}{8 - from_row}"
     to_square = f"{col_map[to_col]}{8 - to_row}"
 
-    # Generate move notation
-    if piece.lower() == 'p':  # Pawn move
-        if from_col != to_col and board[to_row][to_col] != ' ':  # Capture
-            return f"{col_map[from_col]}x{to_square}"
-        return to_square  # Regular move
-    else:
-        notation_piece = piece.upper() if piece.islower() else piece
-        capture_indicator = 'x' if board[to_row][to_col] != ' ' else ''
-        return f"{notation_piece}{capture_indicator}{to_square}"
+    # Return simple move notation
+    return f"{from_square}{to_square}"
 
 def print_move_to_console(stdscr, move_notation):
     stdscr.addstr(len(board) + 3, 0, f"Last move: {move_notation}                    ")  # Display the move with padding to clear previous text
     stdscr.refresh()
 
-curses.wrapper(main)
+def prompt_user(stdscr, prompt_text):
+    stdscr.addstr(len(board) + 4, 0, prompt_text)
+    stdscr.refresh()
+    while True:
+        key = stdscr.getch()
+        if key in [ord('y'), ord('Y'), ord('n'), ord('N')]:
+            # Clear the prompt after receiving input
+            stdscr.addstr(len(board) + 4, 0, " " * (len(prompt_text) + 10))
+            stdscr.refresh()
+            return chr(key)
+
+conn, player_side = setup_network()
+curses.wrapper(main, conn, player_side)
