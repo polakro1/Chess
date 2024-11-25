@@ -91,30 +91,30 @@ def is_legal_move(from_pos, to_pos):
         if from_col == to_col:
             if to_row == from_row + direction and board[to_row][to_col] == ' ':
                 return True  # Move one step forward
-            if from_row == start_row and to_row == from_row + 2 * direction and board[to_row][to_col] == ' ':
+            if from_row == start_row and to_row == from_row + 2 * direction and board[to_row][to_col] == ' ' and board[from_row + direction][to_col] == ' ':
                 return True  # Move two steps forward
         # Capturing
         if abs(from_col - to_col) == 1 and to_row == from_row + direction:
-            return True  # Capture move
-
+            if board[to_row][to_col] != ' ':
+                return True  # Normal capture
+            # En Passant capture
+            global en_passant_target
+            if en_passant_target == (to_row, to_col):
+                return True  # En passant capture
     elif piece.lower() == 'r':  # Rook movement
         if from_row == to_row or from_col == to_col:
             return path_clear(from_pos, to_pos)
-
     elif piece.lower() == 'n':  # Knight movement
         if (abs(from_row - to_row) == 2 and abs(from_col - to_col) == 1) or \
            (abs(from_row - to_row) == 1 and abs(from_col - to_col) == 2):
             return True  # Knight can jump over other pieces
-
     elif piece.lower() == 'b':  # Bishop movement
         if abs(from_row - to_row) == abs(from_col - to_col):
             return path_clear(from_pos, to_pos)
-
     elif piece.lower() == 'q':  # Queen movement
         if (from_row == to_row or from_col == to_col or
             abs(from_row - to_row) == abs(from_col - to_col)):
             return path_clear(from_pos, to_pos)
-
     elif piece.lower() == 'k':  # King movement
         if max(abs(from_row - to_row), abs(from_col - to_col)) == 1:
             return True  # One square in any direction
@@ -140,38 +140,52 @@ def path_clear(from_pos, to_pos):
     return True
 
 def move_piece(from_pos, to_pos, stdscr):
+    global en_passant_target, last_move
     from_row, from_col = from_pos
     to_row, to_col = to_pos
     piece = board[from_row][from_col]
-    
-    # Check if capturing a piece
+
+    # Capture the opponent's piece, if applicable
     captured_piece = board[to_row][to_col]
     if captured_piece != ' ':
         if captured_piece.isupper():
             captured_white_pieces.append(captured_piece)
         else:
             captured_black_pieces.append(captured_piece)
-    
+
+    # Determine if the move is an en passant capture
+    is_en_passant = False
+    if piece.lower() == 'p' and from_col != to_col and board[to_row][to_col] == ' ':
+        # En passant capture condition
+        if en_passant_target == (to_row, to_col):
+            is_en_passant = True
+
     # Update the board
     board[to_row][to_col] = piece
     board[from_row][from_col] = ' '
-    
-    # Check for pawn promotion
-    if piece.lower() == 'p':
-        if (player_side == 'white' and to_row == 0) or (player_side == 'black' and to_row == 7):
-            promoted_piece = prompt_promotion(stdscr, player_side)
-            if promoted_piece:
-                board[to_row][to_col] = promoted_piece if player_side == 'white' else promoted_piece.lower()
-                move_notation = generate_move_notation(piece, from_pos, to_pos) + promoted_piece.upper()
-            else:
-                move_notation = generate_move_notation(piece, from_pos, to_pos)
+
+    if is_en_passant:
+        # Remove the captured pawn for en passant
+        capture_row = to_row + (1 if piece.isupper() else -1)
+        captured_piece = board[capture_row][to_col]
+        board[capture_row][to_col] = ' '
+        if captured_piece.isupper():
+            captured_white_pieces.append(captured_piece)
         else:
-            move_notation = generate_move_notation(piece, from_pos, to_pos)
-    else:
-        move_notation = generate_move_notation(piece, from_pos, to_pos)
-    
+            captured_black_pieces.append(captured_piece)
+
+    # Generate standard chess notation
+    move_notation = generate_move_notation(piece, from_pos, to_pos)
+
     # Print move to the console
     print_move_to_console(stdscr, move_notation)
+
+    # Handle en passant target setting
+    if piece.lower() == 'p' and abs(to_row - from_row) == 2:
+        # Set en passant target
+        en_passant_target = ((from_row + to_row) // 2, from_col)
+    else:
+        en_passant_target = None
 
 def prompt_promotion(stdscr, player_side):
     stdscr.addstr(len(board) + 4, 0, "Promote to (Q, R, B, N): ")
@@ -281,7 +295,7 @@ def handle_enter_key(stdscr, row, col):
             move_notation = generate_move_notation(board[selected_piece[0]][selected_piece[1]], selected_piece, (row, col))
             # Check for pawn promotion
             if board[selected_piece[0]][selected_piece[1]].lower() == 'p':
-                if (player_side == 'white' and (8 - row) == 1) or (player_side == 'black' and (8 - row) == 8):
+                if (player_side == 'white' and row == 0) or (player_side == 'black' and row == 7):
                     promotion_piece = prompt_promotion(stdscr, player_side)
                     if promotion_piece:
                         move_notation += promotion_piece.upper()
@@ -446,6 +460,11 @@ def parse_move_data(move_data):
     from_row = 8 - int(move_data[1])
     to_col = col_map[move_data[2]]
     to_row = 8 - int(move_data[3])
+
+    # Reset en passant target unless the last move was a two-square pawn move
+    piece_moved = board[to_row][to_col]
+    if not (piece_moved.lower() == 'p' and abs(to_row - from_row) == 2):
+        en_passant_target = None
 
     return (from_row, from_col), (to_row, to_col), promotion_piece if to_promotion else None
 
