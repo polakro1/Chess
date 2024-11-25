@@ -195,7 +195,7 @@ def flash_error(stdscr, row, col):
     for _ in range(3):  # Loop for a short duration to create the blink effect
         update_board(stdscr, row, col, last_move)
         stdscr.refresh()
-        curses.napms(100)  # Pause for 100 milliseconds
+        curses.napms(300)  # Pause for 300 milliseconds
 
     # Reset to the previous mode
     selection_mode = 'select_piece' if selected_piece is None else 'select_move'
