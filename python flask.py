@@ -130,13 +130,65 @@ def move_piece(from_pos, to_pos, stdscr):
     # Update the board
     board[to_row][to_col] = piece
     board[from_row][from_col] = ' '
-
-    # Generate standard chess notation
-    move_notation = generate_move_notation(piece, from_pos, to_pos)
+    
+    # Check for pawn promotion
+    if piece.lower() == 'p':
+        if (player_side == 'white' and to_row == 0) or (player_side == 'black' and to_row == 7):
+            promoted_piece = prompt_promotion(stdscr, player_side)
+            if promoted_piece:
+                board[to_row][to_col] = promoted_piece if player_side == 'white' else promoted_piece.lower()
+                move_notation = generate_move_notation(piece, from_pos, to_pos) + promoted_piece.upper()
+            else:
+                move_notation = generate_move_notation(piece, from_pos, to_pos)
+        else:
+            move_notation = generate_move_notation(piece, from_pos, to_pos)
+    else:
+        move_notation = generate_move_notation(piece, from_pos, to_pos)
     
     # Print move to the console
     print_move_to_console(stdscr, move_notation)
 
+def prompt_promotion(stdscr, player_side):
+    stdscr.addstr(len(board) + 4, 0, "Promote to (Q, R, B, N): ")
+    stdscr.refresh()
+    promotion_piece = ''
+    while True:
+        key = stdscr.getch()
+        if key in [ord('q'), ord('Q'), ord('r'), ord('R'), ord('b'), ord('B'), ord('n'), ord('N')]:
+            promotion_piece = chr(key).upper() if player_side == 'white' else chr(key).lower()
+            break
+    # Clear the promotion prompt
+    stdscr.addstr(len(board) + 4, 0, " " * 30)
+    stdscr.refresh()
+    return promotion_piece
+
+def parse_move_data(move_data):
+    """
+    Parses the move notation and extracts from and to positions along with promotion piece if any.
+
+    Parameters:
+        move_data (str): Move notation string (e.g., 'e2e4' or 'e7e8Q').
+
+    Returns:
+        tuple: ((from_row, from_col), (to_row, to_col), promotion_piece or None)
+    """
+    col_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+    
+    if len(move_data) < 4:
+        return None, None, None  # Invalid move data
+
+    from_col = col_map.get(move_data[0].lower(), None)
+    from_row = 8 - int(move_data[1]) if move_data[1].isdigit() else None
+    to_col = col_map.get(move_data[2].lower(), None)
+    to_row = 8 - int(move_data[3]) if move_data[3].isdigit() else None
+
+    if from_col is None or from_row is None or to_col is None or to_row is None:
+        return None, None, None  # Invalid move data
+
+    promotion_piece = move_data[4].upper() if len(move_data) == 5 else None
+
+    return (from_row, from_col), (to_row, to_col), promotion_piece
+    
 def flash_error(stdscr, row, col):
     global selection_mode, last_move
     selection_mode = 'error'
@@ -297,15 +349,8 @@ def generate_move_notation(piece, from_pos, to_pos):
     from_square = f"{col_map[from_col]}{8 - from_row}"
     to_square = f"{col_map[to_col]}{8 - to_row}"
 
-    # Generate move notation
-    if piece.lower() == 'p':  # Pawn move
-        if from_col != to_col and board[to_row][to_col] != ' ':  # Capture
-            return f"{col_map[from_col]}x{to_square}"
-        return to_square  # Regular move
-    else:
-        notation_piece = piece.upper() if piece.islower() else piece
-        capture_indicator = 'x' if board[to_row][to_col] != ' ' else ''
-        return f"{notation_piece}{capture_indicator}{to_square}"
+    # Return simple move notation
+    return f"{from_square}{to_square}"
 
 def print_move_to_console(stdscr, move_notation):
     stdscr.addstr(len(board) + 3, 0, f"Last move: {move_notation}                    ")  # Display the move with padding to clear previous text
@@ -416,16 +461,34 @@ def handle_received_moves(role, server_address=None):
         pass
 
 def process_received_move(move):
-    from_col = ord(move[0]) - ord('a')  # Extract column (e.g., 'a' -> 0)
-    from_row = 8 - int(move[1])         # Extract row (e.g., '2' -> 6 for white's perspective)
-    to_col = ord(move[2]) - ord('a')    # Extract destination column
-    to_row = 8 - int(move[3])           # Extract destination row
+    parsed = parse_move_data(move)
+    if parsed is None:
+        print("Received invalid move data.")
+        return
+
+    from_pos, to_pos, promotion_piece = parsed
+
+    if from_pos is None or to_pos is None:
+        print("Received incomplete move data.")
+        return
+
+    from_row, from_col = from_pos
+    to_row, to_col = to_pos
 
     # Update the board with the received move
     piece = board[from_row][from_col]
     board[to_row][to_col] = piece
     board[from_row][from_col] = ' '
 
+    # Handle pawn promotion if applicable
+    if promotion_piece:
+        board[to_row][to_col] = promotion_piece if player_side == 'black' else promotion_piece.upper()
+
+    # Update the last_move and turn
+    global last_move, turn
+    last_move = move
+    turn = 'black' if turn == 'white' else 'white'
+    
 def send_move_to_server(move, server_address):
     try:
         data = {'move': move}

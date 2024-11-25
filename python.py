@@ -143,12 +143,37 @@ def move_piece(from_pos, to_pos, stdscr):
     # Update the board
     board[to_row][to_col] = piece
     board[from_row][from_col] = ' '
-
-    # Generate standard chess notation
-    move_notation = generate_move_notation(piece, from_pos, to_pos)
+    
+    # Check for pawn promotion
+    if piece.lower() == 'p':
+        if (player_side == 'white' and to_row == 0) or (player_side == 'black' and to_row == 7):
+            promoted_piece = prompt_promotion(stdscr, player_side)
+            if promoted_piece:
+                board[to_row][to_col] = promoted_piece if player_side == 'white' else promoted_piece.lower()
+                move_notation = generate_move_notation(piece, from_pos, to_pos) + promoted_piece.upper()
+            else:
+                move_notation = generate_move_notation(piece, from_pos, to_pos)
+        else:
+            move_notation = generate_move_notation(piece, from_pos, to_pos)
+    else:
+        move_notation = generate_move_notation(piece, from_pos, to_pos)
     
     # Print move to the console
     print_move_to_console(stdscr, move_notation)
+
+def prompt_promotion(stdscr, player_side):
+    stdscr.addstr(len(board) + 4, 0, "Promote to (Q, R, B, N): ")
+    stdscr.refresh()
+    promotion_piece = ''
+    while True:
+        key = stdscr.getch()
+        if key in [ord('q'), ord('Q'), ord('r'), ord('R'), ord('b'), ord('B'), ord('n'), ord('N')]:
+            promotion_piece = chr(key).upper() if player_side == 'white' else chr(key).lower()
+            break
+    # Clear the promotion prompt
+    stdscr.addstr(len(board) + 4, 0, " " * 30)
+    stdscr.refresh()
+    return promotion_piece
 
 def flash_error(stdscr, row, col):
     global selection_mode, last_move
@@ -240,6 +265,12 @@ def handle_enter_key(stdscr, row, col):
     elif selection_mode == 'select_move':
         if is_legal_move(selected_piece, (row, col)):
             move_notation = generate_move_notation(board[selected_piece[0]][selected_piece[1]], selected_piece, (row, col))
+            # Check for pawn promotion
+            if board[selected_piece[0]][selected_piece[1]].lower() == 'p':
+                if (player_side == 'white' and (8 - row) == 1) or (player_side == 'black' and (8 - row) == 8):
+                    promotion_piece = prompt_promotion(stdscr, player_side)
+                    if promotion_piece:
+                        move_notation += promotion_piece.upper()
             move_piece(selected_piece, (row, col), stdscr)
             selection_mode = 'select_piece'
             selected_piece = None
@@ -357,8 +388,10 @@ def main(stdscr, conn, player_side):
                     time.sleep(2)
                     conn.close()
                     break
-                from_pos, to_pos = parse_move_data(move_data)
+                from_pos, to_pos, promotion_piece = parse_move_data(move_data)
                 move_piece(from_pos, to_pos, stdscr)
+                if promotion_piece:
+                    board[to_pos[0]][to_pos[1]] = promotion_piece if player_side == 'white' else promotion_piece.lower()
                 last_move = move_data
                 turn = player_side  # Your turn now
             except socket.error:
@@ -386,11 +419,21 @@ def main(stdscr, conn, player_side):
 
 def parse_move_data(move_data):
     col_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+    
+    # Check if the move includes promotion (e.g., e7e8Q)
+    if len(move_data) == 5:
+        promotion_piece = move_data[4].upper()
+        to_promotion = True
+    else:
+        promotion_piece = ''
+        to_promotion = False
+
     from_col = col_map[move_data[0]]
     from_row = 8 - int(move_data[1])
-    to_col = col_map[move_data[-2]]
-    to_row = 8 - int(move_data[-1])
-    return (from_row, from_col), (to_row, to_col)
+    to_col = col_map[move_data[2]]
+    to_row = 8 - int(move_data[3])
+
+    return (from_row, from_col), (to_row, to_col), promotion_piece if to_promotion else None
 
 def generate_move_notation(piece, from_pos, to_pos):
     from_row, from_col = from_pos
