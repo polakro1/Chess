@@ -282,6 +282,18 @@ def handle_escape_key(selection_mode, selected_piece):
     return selection_mode, selected_piece
 
 def setup_network():
+    def get_local_ip():
+        try:
+            # Use a dummy connection to retrieve the local network IP address
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            return local_ip
+        except Exception as e:
+            print(f"Unable to determine local IP: {e}")
+            return "127.0.0.1"  # Fallback to localhost
+
     mode = input("Enter 'server' to host or 'client' to connect: ").strip().lower()
     port_server = 5050
     buffer_size = 1024
@@ -291,13 +303,24 @@ def setup_network():
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind(("", port_server))
         server_socket.listen(1)
+
+        # Get and display server's local IP address
+        local_ip = get_local_ip()
+        print(f"Server IP address: {local_ip}")
         print(f"Server listening on port {port_server}...")
+        
         conn, addr = server_socket.accept()
         print(f"Connected by {addr}")
         player_side = 'white'  # Server plays white
     elif mode == 'client':
+        server_ip = input("Enter the server's IP address: ").strip()
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        conn.connect(("localhost", port_server))
+        try:
+            conn.connect((server_ip, port_server))
+        except socket.error as e:
+            print(f"Failed to connect to {server_ip}:{port_server} - {e}")
+            exit()
+        print(f"Connected to server at {server_ip}:{port_server}")
         player_side = 'black'  # Client plays black
     else:
         print("Invalid mode.")
@@ -317,28 +340,6 @@ def main(stdscr, conn, player_side):
 
     while True:
         update_board(stdscr, row, col, last_move)  # Always update the board
-
-        # Handle key inputs for surrender regardless of turn
-        key = stdscr.getch()
-        if key != -1:
-            if key == ord('s'):
-                handle_surrender(stdscr, conn)
-            elif key in [curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT]:
-                if turn == player_side:
-                    row, col = handle_movement_keys(key, row, col)
-            elif key in [ord('\n'), curses.KEY_ENTER]:
-                if turn == player_side:
-                    move_notation = handle_enter_key(stdscr, row, col)
-                    if move_notation:
-                        update_board(stdscr, row, col, move_notation)  # Show the move on the board
-                        conn.sendall(move_notation.encode('utf-8'))
-                        last_move = move_notation
-                        turn = 'black' if player_side == 'white' else 'white'  # Switch turn
-            elif key == 27:  # Escape key
-                selection_mode, selected_piece = handle_escape_key(selection_mode, selected_piece)
-            elif key == ord('q'):
-                conn.close()
-                break
 
         if turn != player_side:
             # Wait for opponent's move
@@ -363,7 +364,25 @@ def main(stdscr, conn, player_side):
             except socket.error:
                 pass  # Handle socket errors if necessary
         else:
-            pass  # Your turn; already handled key inputs above
+            key = stdscr.getch()
+
+            # Handle key inputs for selection and movement
+            if key in [curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT]:
+                row, col = handle_movement_keys(key, row, col)
+            elif key in [ord('\n'), curses.KEY_ENTER]:
+                move_notation = handle_enter_key(stdscr, row, col)
+                if move_notation:
+                    update_board(stdscr, row, col, move_notation)  # Show the move on the board
+                    conn.sendall(move_notation.encode('utf-8'))
+                    last_move = move_notation
+                    turn = 'black' if player_side == 'white' else 'white'  # Switch turn
+            elif key == ord('s'):
+                handle_surrender(stdscr, conn)
+            elif key == 27:  # Escape key
+                selection_mode, selected_piece = handle_escape_key(selection_mode, selected_piece)
+            elif key == ord('q'):
+                conn.close()
+                break
 
 def parse_move_data(move_data):
     col_map = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
