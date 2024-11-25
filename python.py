@@ -30,6 +30,10 @@ selection_mode = 'select_piece'  # Modes: 'select_piece', 'select_move', 'error'
 selected_piece = None  # Tuple (row, col) of selected piece
 last_move = ""  # Variable to keep track of the last move
 
+# Lists to track captured pieces
+captured_white_pieces = []
+captured_black_pieces = []
+
 def initialize_colors():
     curses.start_color()
     curses.use_default_colors()
@@ -140,6 +144,14 @@ def move_piece(from_pos, to_pos, stdscr):
     to_row, to_col = to_pos
     piece = board[from_row][from_col]
     
+    # Check if capturing a piece
+    captured_piece = board[to_row][to_col]
+    if captured_piece != ' ':
+        if captured_piece.isupper():
+            captured_white_pieces.append(captured_piece)
+        else:
+            captured_black_pieces.append(captured_piece)
+    
     # Update the board
     board[to_row][to_col] = piece
     board[from_row][from_col] = ' '
@@ -239,6 +251,8 @@ def update_board(stdscr, sel_row, sel_col, last_move):
 
     # Print the last move below the board
     stdscr.addstr(len(board) + 3, 0, f"Last move: {last_move}                    ")  # Display the move text
+    # Display captured pieces
+    display_captured_pieces(stdscr)
 
     stdscr.refresh()
 
@@ -461,6 +475,15 @@ def prompt_user(stdscr, prompt_text):
             stdscr.addstr(len(board) + 4, 0, " " * (len(prompt_text) + 10))
             stdscr.refresh()
             return chr(key)
+        
+def display_captured_pieces(stdscr):
+    # Convert captured pieces to their Unicode symbols
+    captured_white = ' '.join([pieces[p] for p in captured_white_pieces])
+    captured_black = ' '.join([pieces[p] for p in captured_black_pieces])
+    
+    # Display captured pieces
+    stdscr.addstr(len(board) + 4, 0, f"Captured White Pieces: {captured_white}")
+    stdscr.addstr(len(board) + 5, 0, f"Captured Black Pieces: {captured_black}")
 
 conn, player_side = setup_network()
 curses.wrapper(main, conn, player_side)
