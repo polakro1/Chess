@@ -345,8 +345,8 @@ def update_board(stdscr, sel_row, sel_col, last_move):
     # Display captured pieces
     display_captured_pieces(stdscr)
     # Display check statuses
-    stdscr.addstr(len(board) + 4, 0, f"White Status: {'In Check!' if in_check_white else 'Safe'}", curses.color_pair(6 if in_check_white else 3))
-    stdscr.addstr(len(board) + 5, 0, f"Black Status: {'In Check!' if in_check_black else 'Safe'}", curses.color_pair(6 if in_check_black else 3))
+    stdscr.addstr(len(board) + 6, 0, f"White Status: {'In Check!' if in_check_white else 'Safe'}", curses.color_pair(6 if in_check_white else 3))
+    stdscr.addstr(len(board) + 7, 0, f"Black Status: {'In Check!' if in_check_black else 'Safe'}", curses.color_pair(6 if in_check_black else 3))
 
     stdscr.refresh()
 
