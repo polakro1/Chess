@@ -12,11 +12,11 @@ pieces = {
 
 # Initial board setup
 board = [
-    ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+    ['r', 'n', 'b', 'q', ' ', 'b', 'n', 'r'],
     ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-    [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+    [' ', ' ', ' ', ' ', 'k', ' ', ' ', ' '],
     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
     ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
     ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
@@ -29,6 +29,7 @@ player_side = 'white'  # Set to 'white' or 'black'
 selection_mode = 'select_piece'  # Modes: 'select_piece', 'select_move', 'error'
 selected_piece = None  # Tuple (row, col) of selected piece
 last_move = ""  # Variable to keep track of the last move
+in_check = False  # Tracks if the current player is in check
 
 # Lists to track captured pieces
 captured_white_pieces = []
@@ -67,6 +68,46 @@ def handle_enter_key(stdscr, row, col):
             selected_piece = None
         else:
             flash_error(stdscr, row, col)
+
+def find_king(player_side):
+    for row in range(8):
+        for col in range(8):
+            piece = board[row][col]
+            if player_side == 'white' and piece == 'K':
+                return (row, col)
+            elif player_side == 'black' and piece == 'k':
+                return (row, col)
+    return None
+
+def is_checkmate(player_side):
+    if not is_in_check(player_side):
+        return False
+    # Iterate over all player's pieces
+    for row in range(8):
+        for col in range(8):
+            piece = board[row][col]
+            if (player_side == 'white' and piece.isupper()) or (player_side == 'black' and piece.islower()):
+                from_pos = (row, col)
+                # Iterate through all possible to_pos
+                for to_row in range(8):
+                    for to_col in range(8):
+                        to_pos = (to_row, to_col)
+                        if is_legal_move(from_pos, to_pos):
+                            return False  # Found at least one legal move
+    return True  # No legal moves found and in check
+
+def is_in_check(player_side):
+    king_pos = find_king(player_side)
+    if not king_pos:
+        return False
+    opponent_side = 'black' if player_side == 'white' else 'white'
+    for row in range(8):
+        for col in range(8):
+            piece = board[row][col]
+            if (opponent_side == 'white' and piece.isupper()) or (opponent_side == 'black' and piece.islower()):
+                if is_legal_move((row, col), king_pos):
+                    return True
+    return False
 
 def is_legal_move(from_pos, to_pos):
     from_row, from_col = from_pos
@@ -118,6 +159,22 @@ def is_legal_move(from_pos, to_pos):
     elif piece.lower() == 'k':  # King movement
         if max(abs(from_row - to_row), abs(from_col - to_col)) == 1:
             return True  # One square in any direction
+        
+        # Simulate the move
+    temp_piece = board[to_row][to_col]
+    board[to_row][to_col] = board[from_row][from_col]
+    board[from_row][from_col] = ' '
+
+    # Check if the move leaves the player's king in check
+    if is_in_check(player_side):
+        # Undo the simulated move
+        board[from_row][from_col] = board[to_row][to_col]
+        board[to_row][to_col] = temp_piece
+        return False
+
+    # Undo the simulated move
+    board[from_row][from_col] = board[to_row][to_col]
+    board[to_row][to_col] = temp_piece
 
     return False
 
@@ -267,6 +324,11 @@ def update_board(stdscr, sel_row, sel_col, last_move):
     stdscr.addstr(len(board) + 3, 0, f"Last move: {last_move}                    ")  # Display the move text
     # Display captured pieces
     display_captured_pieces(stdscr)
+        # Display check status
+    if in_check:
+        stdscr.addstr(len(board) + 6, 0, "Status: In Check!", curses.color_pair(6))
+    else:
+        stdscr.addstr(len(board) + 6, 0, "Status: Safe", curses.color_pair(3))
 
     stdscr.refresh()
 
@@ -393,7 +455,7 @@ def main(stdscr, conn, player_side):
     stdscr.nodelay(1)    # Non-blocking input
     stdscr.timeout(100)  # Refresh rate for blinking effect
 
-    global selection_mode, selected_piece, last_move
+    global selection_mode, selected_piece, last_move, in_check
     row, col = 0, 0  # Initial selection position
     turn = 'white'  # White starts first
 
@@ -422,6 +484,23 @@ def main(stdscr, conn, player_side):
                     board[to_pos[0]][to_pos[1]] = promotion_piece if player_side == 'white' else promotion_piece.lower()
                 last_move = move_data
                 turn = player_side  # Your turn now
+
+                # After receiving and applying the move, check if you are in check or checkmate
+                in_check = is_in_check(player_side)
+                if in_check:
+                    if is_checkmate(player_side):
+                        last_move += " (Checkmate!)"
+                        update_board(stdscr, row, col, last_move)
+                        stdscr.addstr(len(board) + 5, 0, "Checkmate! You lose!", curses.color_pair(5))
+                        stdscr.refresh()
+                        time.sleep(2)
+                        conn.close()
+                        break
+                    else:
+                        last_move += " (Check!)"
+                else:
+                    in_check = False
+
             except socket.error:
                 pass  # Handle socket errors if necessary
         else:
@@ -437,6 +516,25 @@ def main(stdscr, conn, player_side):
                     conn.sendall(move_notation.encode('utf-8'))
                     last_move = move_notation
                     turn = 'black' if player_side == 'white' else 'white'  # Switch turn
+                    # After switching turns, check if the opponent is in check or checkmate
+                    in_check = is_in_check(turn)
+                    if in_check:
+                        if is_checkmate(turn):
+                            last_move += " (Checkmate!)"
+                            update_board(stdscr, row, col, last_move)
+                            if player_side == 'white':
+                                stdscr.addstr(len(board) + 5, 0, "Checkmate! You win!", curses.color_pair(5))
+                            else:
+                                stdscr.addstr(len(board) + 5, 0, "Checkmate! You lose!", curses.color_pair(5))
+                            stdscr.refresh()
+                            time.sleep(2)
+                            conn.close()
+                            break
+                        else:
+                            last_move += " (Check!)"
+                            in_check = True
+                    else:
+                        in_check = False
             elif key == ord('s'):
                 handle_surrender(stdscr, conn)
             elif key == 27:  # Escape key
