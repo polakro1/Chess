@@ -12,8 +12,8 @@ pieces = {
 
 # Initial board setup
 board = [
-    ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
-    ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+    ['r', ' ', 'b', 'q', 'k', 'b', 'n', 'r'],
+    ['p', 'P', 'p', 'p', 'p', 'p', 'p', 'p'],
     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
     [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
@@ -378,6 +378,8 @@ def handle_enter_key(stdscr, row, col):
                 if (player_side == 'white' and row == 0) or (player_side == 'black' and row == 7):
                     promotion_piece = prompt_promotion(stdscr, player_side)
                     if promotion_piece:
+                        # Replace pawn with promoted piece
+                        board[selected_piece[0]][selected_piece[1]] = promotion_piece if player_side == 'white' else promotion_piece.lower()
                         move_notation += promotion_piece.upper()
             move_piece(selected_piece, (row, col), stdscr)
             selection_mode = 'select_piece'
