@@ -517,7 +517,7 @@ def main(stdscr, conn, player_side):
                             update_board(stdscr, row, col, last_move)
                             stdscr.addstr(len(board) + 5, 0, "Checkmate! You lose!", curses.color_pair(5))
                             stdscr.refresh()
-                            time.sleep(2)
+                            time.sleep(10)
                             conn.close()
                             break
                         else:
@@ -529,7 +529,7 @@ def main(stdscr, conn, player_side):
                             update_board(stdscr, row, col, last_move)
                             stdscr.addstr(len(board) + 5, 0, "Checkmate! You lose!", curses.color_pair(5))
                             stdscr.refresh()
-                            time.sleep(2)
+                            time.sleep(10)
                             conn.close()
                             break
                         else:
@@ -563,7 +563,7 @@ def main(stdscr, conn, player_side):
                                 update_board(stdscr, row, col, last_move)
                                 stdscr.addstr(len(board) + 5, 0, "Checkmate! You win!", curses.color_pair(5))
                                 stdscr.refresh()
-                                time.sleep(2)
+                                time.sleep(10)
                                 conn.close()
                                 break
                             else:
@@ -575,7 +575,7 @@ def main(stdscr, conn, player_side):
                                 update_board(stdscr, row, col, last_move)
                                 stdscr.addstr(len(board) + 5, 0, "Checkmate! You win!", curses.color_pair(5))
                                 stdscr.refresh()
-                                time.sleep(2)
+                                time.sleep(10)
                                 conn.close()
                                 break
                             else:
