@@ -371,7 +371,7 @@ def handle_enter_key(stdscr, row, col):
         else:
             flash_error(stdscr, row, col)
     elif selection_mode == 'select_move':
-        if is_legal_move(selected_piece, (row, col)):
+        if is_legal_move(selected_piece, (row, col), player_side):
             move_notation = generate_move_notation(board[selected_piece[0]][selected_piece[1]], selected_piece, (row, col))
             # Check for pawn promotion
             if board[selected_piece[0]][selected_piece[1]].lower() == 'p':
