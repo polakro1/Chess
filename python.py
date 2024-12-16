@@ -55,23 +55,6 @@ def initialize_colors():
     curses.init_pair(9, 11, curses.COLOR_RED)     # Black piece on red tile
     curses.init_pair(10, 11, curses.COLOR_BLACK)  # Black piece on black tile
 
-def handle_enter_key(stdscr, row, col):
-    global selection_mode, selected_piece
-    piece = board[row][col]
-    if selection_mode == 'select_piece':
-        if (player_side == 'white' and piece.isupper()) or (player_side == 'black' and piece.islower()):
-            selection_mode = 'select_move'
-            selected_piece = (row, col)
-        else:
-            flash_error(stdscr, row, col)
-    elif selection_mode == 'select_move':
-        if is_legal_move(selected_piece, (row, col)):
-            move_piece(selected_piece, (row, col), stdscr)
-            selection_mode = 'select_piece'
-            selected_piece = None
-        else:
-            flash_error(stdscr, row, col)
-
 def find_king(player_side):
     for row in range(8):
         for col in range(8):
